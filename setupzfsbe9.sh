@@ -1,0 +1,337 @@
+#!/bin/sh
+
+DISK1="ada0"
+DISK2="ada1"
+
+MNT="/tmp/mnt"
+POOL="rpool"
+ROOTFS="${POOL}/ROOT/freebsd-90r"
+
+HOSTNAME="thalia-dev"
+HOSTIP="192.168.5.160"
+HOSTIP6="2001:44b8:4170:2600:250:56ff:fe36:9dc"
+HOSTIP_ALIAS="192.168.5.161"
+GATEWAY="192.168.5.254"
+IF="em0"
+
+DOMAIN="draenan.net"
+NAMESERVER="127.0.0.1"
+NAMESERVER6="::1"
+
+ATKBD_DISABLED="0"
+
+echo "Preparing disk(s)..."
+
+gpart create -s gpt $DISK1
+
+gpart add -b 34 -s 128K -t freebsd-boot -l boot0 $DISK1
+gpart add -s 4G -t freebsd-swap -l swap0 $DISK1
+gpart add -t freebsd-zfs -l disk0 $DISK1
+
+gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK1
+
+if [ ! -z "$DISK2" ]; then
+    gpart create -s gpt $DISK2
+    gpart add -b 34 -s 128K -t freebsd-boot -l boot1 $DISK2
+    gpart add -s 4G -t freebsd-swap -l swap1 $DISK2
+
+    gpart add -t freebsd-zfs -l disk1 $DISK2
+
+    gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK2
+fi
+
+echo "Creating $POOL and filesystems..."
+
+if [ ! -e "$MNT" ]; then
+    mkdir -p $MNT
+fi
+
+if [ -z "$DISK2" ]; then
+    zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL /dev/gpt/disk0
+else
+    zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL mirror /dev/gpt/disk0 /dev/gpt/disk1
+fi
+
+zfs set checksum=fletcher4 $POOL
+
+zfs create -p                                                   $ROOTFS
+zfs create -o mountpoint=/home                                  ${POOL}/HOME
+
+zfs create -o compression=on     -o exec=on    -o setuid=off    ${ROOTFS}/tmp
+zfs create                                                      ${ROOTFS}/usr
+zfs create -o compression=lzjb                 -o setuid=off    ${ROOTFS}/usr/ports
+zfs create -o compression=off    -o exec=off   -o setuid=off    ${ROOTFS}/usr/ports/distfiles
+zfs create -o compression=off    -o exec=off   -o setuid=off    ${ROOTFS}/usr/ports/packages
+zfs create -o compression=lzjb   -o exec=off   -o setuid=off    ${ROOTFS}/usr/src
+zfs create                                                      ${ROOTFS}/var
+zfs create -o compression=lzjb   -o exec=off   -o setuid=off    ${ROOTFS}/var/crash
+zfs create                       -o exec=off   -o setuid=off    ${ROOTFS}/var/db
+zfs create -o compression=lzjb   -o exec=on    -o setuid=off    ${ROOTFS}/var/db/pkg
+zfs create                       -o exec=off   -o setuid=off    ${ROOTFS}/var/empty
+zfs create -o compression=lzjb   -o exec=off   -o setuid=off    ${ROOTFS}/var/log
+zfs create -o compression=gzip   -o exec=off   -o setuid=off    ${ROOTFS}/var/mail
+zfs create                       -o exec=off   -o setuid=off    ${ROOTFS}/var/run
+zfs create -o compression=lzjb   -o exec=on    -o setuid=off    ${ROOTFS}/var/tmp
+
+chmod 1777 ${MNT}/${ROOTFS}/tmp
+chmod 1777 ${MNT}/${ROOTFS}/var/tmp
+mkdir -p ${MNT}/${ROOTFS}/usr/local/etc
+
+zpool set bootfs=${ROOTFS} $POOL
+
+echo "Installing FreeBSD..."
+
+cd /usr/freebsd-dist
+DESTDIR=${MNT}/${ROOTFS}
+export DESTDIR
+for file in base.txz lib32.txz kernel.txz doc.txz ports.txz src.txz; do
+    (cat $file | tar --unlink -xpJf - -C ${DESTDIR:-/})
+done;
+
+cp /var/tmp/zpool.cache ${MNT}/${ROOTFS}/boot/zfs/zpool.cache
+
+zfs set readonly=on ${ROOTFS}/var/empty
+
+echo "Configuring files..."
+
+cat > ${MNT}/${ROOTFS}/etc/rc.conf << EOF
+zfs_enable="YES"
+
+# Networking
+#
+hostname="${HOSTNAME}.${DOMAIN}"
+ifconfig_${IF}="inet ${HOSTIP} netmask 255.255.255.0"
+ifconfig_${IF}_alias0="inet ${HOSTIP_ALIAS} netmask 255.255.255.0"
+ifconfig_${IF}_ipv6="inet6 accept_rtadv"
+defaultrouter="${GATEWAY}"
+
+# Firewall
+#
+#firewall_enable="YES"
+#firewall_script="/usr/local/etc/ipfw.rules"
+#firewall_logging="YES"
+#firewall_quiet="YES"
+
+# Fail2ban
+#
+#fail2ban_enable="YES"
+
+# Secure Shell
+#
+sshd_enable="YES"
+
+# Network Time Protocol
+#
+ntpd_enable="YES"
+
+# Syslog
+#
+#syslogd_flags="-l /var/db/dhcpd/var/run/log -l /var/db/dhcpd6/var/run/log -c"
+
+# ISC BIND
+#
+named_enable="YES"
+
+# pixelserv for DNS-based ad-block
+#
+#pixelserv_enable="YES"
+
+# ISC DHCPD
+#
+#dhcpd_enable="YES"
+#dhcpd_flags="-q"
+#dhcpd_conf="/usr/local/etc/dhcpd.conf"
+#dhcpd_ifaces="$IF"
+#dhcpd_withumask="022"
+#dhcpd_chuser_enable="YES"
+#dhcpd_withuser="dhcpd"
+#dhcpd_withgroup="dhcpd"
+#dhcpd_chroot_enable="YES"
+#dhcpd_devfs_enable="YES"
+
+#dhcpd6_enable="YES"
+#dhcpd6_flags="-q"
+#dhcpd6_conf="/usr/local/etc/dhcpd6.conf"
+#dhcpd6_ifaces="$IF"
+#dhcpd6_withumask="022"
+#dhcpd6_chuser_enable="YES"
+#dhcpd6_withuser="dhcpd"
+#dhcpd6_withgroup="dhcpd"
+#dhcpd6_chroot_enable="YES"
+#dhcpd6_devfs_enable="YES"
+#dhcpd6_rootdir="/var/db/dhcpd6"
+
+# APC UPS Daemon
+#
+#apcupsd_enable="YES"
+#apcupsd_flags=""
+
+# OpenVPN
+#
+#openvpn_enable="YES"
+#gateway_enable="YES"
+
+# OpenLDAP Server
+#
+#slapd_enable="YES"
+#slapd_flags='-h "ldapi://%2fvar%2frun%2fopenldap%2fldapi/ ldap:///"'
+#slapd_sockets="/var/run/openldap/ldapi"
+
+# Cyrus SASL Auth Daemon
+#
+#saslauthd_enable="NO"
+#saslauthd_flags="-a ldap"
+
+# Name Service Cache Daemon
+#
+#nscd_enable="YES"
+
+# DevFS rules
+#devfs_system_ruleset="system"
+
+# CUPS print server
+#
+#cupsd_enable="YES"
+
+# Netatalk for Apple File Protocol
+#
+#netatalk_enable="YES"
+#afpd_enable="YES"
+#cnid_metad_enable="YES"
+
+# SAMBA server
+#
+#smbd_enable="YES"
+#nmbd_enable="YES"
+
+# Avahi Bonjour/Zeroconf responder
+#
+#dbus_enable="YES"
+#avahi_daemon_enable="YES"
+
+EOF
+
+sed -e '5,$ d' -i '' ${MNT}/${ROOTFS}/etc/motd
+sed -e 's/#PermitRootLogin no/PermitRootLogin yes/' -e 's_#Banner none_Banner /etc/banner_' -i '' ${MNT}/${ROOTFS}/etc/ssh/sshd_config
+
+cat > ${MNT}/${ROOTFS}/etc/banner << EOF
++-----------------------------------------------------------------+
+| This system is for the use of authorised users only.            |
+| Individuals using this computer system without authority, or in |
+| excess of their authority, are subject to having all of their   |
+| activities on this system monitored and recorded by system      |
+| personnel.                                                      |
+|                                                                 |
+| In the course of monitoring individuals improperly using this   |
+| system, or in the course of system maintenance, the activities  |
+| of authorised users may also be monitored.                      |
+|                                                                 |
+| Anyone using this system expressly consents to such monitoring  |
+| and is advised that if such monitoring reveals possible         |
+| evidence of criminal activity, system personnel may provide the |
+| evidence of such monitoring to law enforcement officials.       |
++-----------------------------------------------------------------+
+EOF
+
+echo "search_domains=\"${DOMAIN}\"" > ${MNT}/${ROOTFS}/etc/resolvconf.conf
+if [ ! -z "$NAMESERVER6" ]; then
+    echo "name_servers=\"${NAMESERVER} ${NAMESERVER6}\"" >> ${MNT}/${ROOTFS}/etc/resolvconf.conf
+else
+    echo "name_servers=\"${NAMESERVER}\"" >> ${MNT}/${ROOTFS}/etc/resolvconf.conf
+fi
+
+sed -e "s/localhost.my.domain/localhost.${DOMAIN}/" -i '' ${MNT}/${ROOTFS}/etc/hosts
+printf "${HOSTIP}\t${HOSTNAME}\t${HOSTNAME}.${DOMAIN}\n" >> ${MNT}/${ROOTFS}/etc/hosts
+if [ ! -z "$HOSTIP6" ]; then
+    printf "${HOSTIP6}\t${HOSTNAME}\t${HOSTNAME}.${DOMAIN}\n" >> ${MNT}/${ROOTFS}/etc/hosts
+fi
+
+cat > ${MNT}/${ROOTFS}/boot/loader.conf << EOF
+ahci_load="YES"
+zfs_load="YES"
+aio_load="YES"
+ipfw_load="YES"
+amdtemp_load="YES"
+geom_eli_load="YES"
+hint.atkbdc.0.disabled="${ATKBD_DISABLED}"
+hint.atkbd.0.disabled="${ATKBD_DISABLED}"
+net.inet.ip.fw.default_to_accept="1"
+vfs.root.mountfrom="zfs:${ROOTFS}"
+EOF
+
+cat >> ${MNT}/${ROOTFS}/etc/sysctl.conf << EOF
+net.inet.ip.fw.verbose=1
+EOF
+
+cat > ${MNT}/${ROOTFS}/etc/make.conf << EOF
+CFLAG= -O2 -fno-strict-aliasing -pipe
+NO_PROFILE= true
+WITHOUT_X11= true
+USE_SVN= true
+EOF
+
+cat > ${MNT}/${ROOTFS}/tmp/chroot.sh << EOF
+resolvconf -u
+sed -e '/passwd_format/ s/md5/blf/' -e '/[[:space:]]*:path/ s#:path=\(.*\)\(/usr/local/sbin /usr/local/bin \)\(.*\):\\\\#:path=\2\1\3:\\\\#' -i '' /etc/login.conf
+cap_mkdb /etc/login.conf
+echo Setting root password...
+passwd
+tzsetup
+echo Configuring mail aliases...
+cd /etc/mail; make aliases
+EOF
+
+chroot ${MNT}/${ROOTFS} sh /tmp/chroot.sh
+rm ${MNT}/${ROOTFS}/tmp/chroot.sh
+
+echo Setting up filesystem properties and fstab for manageBE...
+
+for fs in `zfs list -r -H -o name ${ROOTFS}`; do
+    if [ "$fs" = "${ROOTFS}" ]; then
+        zfs set org.freebsd:boot-environment=1 $fs
+    else
+        zfs set org.freebsd:boot-environment=0 $fs
+    fi
+done
+
+printf "# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n" >  ${MNT}/${ROOTFS}/etc/fstab
+printf "/dev/gpt/swap0\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+if [ ! -z "$DISK2" ]; then
+    printf "/dev/gpt/swap1\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+fi
+
+cat >> ${MNT}/${ROOTFS}/etc/fstab << EOF
+
+# Mountpoints for manageBE
+
+${ROOTFS}/tmp /tmp zfs rw 0 0
+${ROOTFS}/usr /usr zfs rw 0 0
+${ROOTFS}/usr/ports /usr/ports zfs rw 0 0
+${ROOTFS}/usr/ports/distfiles /usr/ports/distfiles zfs rw 0 0
+${ROOTFS}/usr/ports/packages /usr/ports/packages zfs rw 0 0
+${ROOTFS}/usr/src /usr/src zfs rw 0 0
+${ROOTFS}/var /var zfs rw 0 0
+${ROOTFS}/var/crash /var/crash zfs rw 0 0
+${ROOTFS}/var/db /var/db zfs rw 0 0
+${ROOTFS}/var/db/pkg /var/db/pkg zfs rw 0 0
+${ROOTFS}/var/empty /var/empty zfs ro 0 0
+${ROOTFS}/var/log /var/log zfs rw 0 0
+${ROOTFS}/var/mail /var/mail zfs rw 0 0
+${ROOTFS}/var/run /var/run zfs rw 0 0
+${ROOTFS}/var/tmp /var/tmp zfs rw 0 0
+EOF
+
+if [ -e "/tmp/manageBE" ]; then
+    if [ ! -e "${MNT}/${ROOTFS}/usr/local/sbin" ]; then
+        mkdir -p ${MNT}/${ROOTFS}/usr/local/sbin
+    fi
+    install -o root -g wheel -m 0740 /tmp/manageBE ${MNT}/${ROOTFS}/usr/local/sbin/manageBE
+fi
+
+echo Unmounting ZFS filesystems...
+
+zfs umount -af
+zfs set mountpoint=/$POOL $POOL
+
+echo Installation complete.
+
