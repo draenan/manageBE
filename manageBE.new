@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.3 2012/06/20 13:48:44 awaters Exp $
+# $Id: manageBE.new,v 1.4 2012/06/20 14:06:35 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
@@ -69,7 +69,7 @@ hr_bytes () {
             break
         fi
     done
-    local unit=$(echo $units | awk '{ print $'$i' }')
+    local unit=$(echo $units | cut -d' ' -f$i)
     echo "$(echo "scale=2; $1 / (1024^($i-1))" | bc ) ${unit}B"
 }
 
