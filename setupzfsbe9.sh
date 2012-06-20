@@ -25,7 +25,7 @@ echo "Preparing disk(s)..."
 gpart create -s gpt $DISK1
 
 gpart add -b 34 -s 128K -t freebsd-boot -l boot0 $DISK1
-gpart add -s 4G -t freebsd-swap -l swap0 $DISK1
+gpart add -s 8G -t freebsd-swap -l swap0 $DISK1
 gpart add -t freebsd-zfs -l disk0 $DISK1
 
 gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK1
@@ -33,11 +33,14 @@ gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK1
 if [ ! -z "$DISK2" ]; then
     gpart create -s gpt $DISK2
     gpart add -b 34 -s 128K -t freebsd-boot -l boot1 $DISK2
-    gpart add -s 4G -t freebsd-swap -l swap1 $DISK2
+    gpart add -s 8G -t freebsd-swap -l swap1 $DISK2
 
     gpart add -t freebsd-zfs -l disk1 $DISK2
 
     gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK2
+
+    kldload /boot/kernel/geom_mirror.ko
+    gmirror label -b prefer swap gpt/swap0 gpt/swap1
 fi
 
 echo "Creating $POOL and filesystems..."
@@ -259,6 +262,11 @@ net.inet.ip.fw.default_to_accept="1"
 vfs.root.mountfrom="zfs:${ROOTFS}"
 EOF
 
+if [ ! -z "$DISK2" ]; then
+    sed -e ' /geom_eli/ a\
+geom_mirror_load="YES"' -i '' ${MNT}/${ROOTFS}/boot/loader.conf
+fi
+
 cat >> ${MNT}/${ROOTFS}/etc/sysctl.conf << EOF
 net.inet.ip.fw.verbose=1
 EOF
@@ -294,10 +302,11 @@ for fs in `zfs list -r -H -o name ${ROOTFS}`; do
     fi
 done
 
-printf "# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n" >  ${MNT}/${ROOTFS}/etc/fstab
-printf "/dev/gpt/swap0\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
-if [ ! -z "$DISK2" ]; then
-    printf "/dev/gpt/swap1\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+printf "# Device\t\tMountpoint\tFStype\tOptions\tDump\tPass#\n" >  ${MNT}/${ROOTFS}/etc/fstab
+if [ -z "$DISK2" ]; then
+    printf "/dev/gpt/swap0\t\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+else
+    printf "/dev/mirror/swap\t\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
 fi
 
 cat >> ${MNT}/${ROOTFS}/etc/fstab << EOF
