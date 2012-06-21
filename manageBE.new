@@ -1,19 +1,22 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.4 2012/06/20 14:06:35 awaters Exp $
+# $Id: manageBE.new,v 1.5 2012/06/21 06:11:18 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
 # Original code by cryx: http://anonsvn.h3q.com/projects/freebsd-patches/browser/manageBE
 #
-# Modified to fix broken actions and implement filesystem property inheritance. Also to 
-# change boot-environment user property name.
+# Modifications:
 #
-# Additional modifications to replace backticks with '$(', given we're already using POSIX
-# compliant non-Bourne "$(( expression ))" substitution
-#
-# Final modifcations to calculate the space used by not just the root filesystem, but also
-# it's child filesystems.
+# - Fix broken actions and correct a few sanity checks
+# - Made command substitution consistent with the method used for arithmetic expansion
+#   (POSIX Bourne as opposed to non-POSIX)
+# - Ensure new boot environment file systems have the same local properties as the
+#   file system they were cloned from
+# - Corrected code that populates /etc/fstab to take into account possible read-only
+#   file systems (eg /var/empty)
+# - Reworked space-usage code to take into account child file systems and snapshots
+# - Require root privileges where appropriate.
 #
 
 if [ $(uname -r |cut -d '.' -f1) -lt "8" ]; then
@@ -41,6 +44,12 @@ check_for_be_existence () {
     if [ "${be_status}" != "1" ]; then
         echo "Sorry, ${bootfs} is not a valid boot environment."
         exit
+    fi
+}
+
+check_root_privs () {
+    if [ $(id -u) -ne "0" ]; then
+        exerr "This action requires root privileges."
     fi
 }
 
@@ -112,6 +121,7 @@ case ${type} in
 
         [ "${bootfs}" -a "${pool}" ] || exerr ${usage_activate}
 
+	check_root_privs
         check_for_be_existence
 
         old_bootfs=$(/sbin/zpool list -H -o bootfs ${pool} |/usr/bin/sed s:^$pool/ROOT/::)
@@ -137,6 +147,7 @@ case ${type} in
             bootfs=$(/sbin/zpool list -H -o bootfs ${pool} | /usr/bin/sed s:${pool}/ROOT/::)
         fi
 
+        check_root_privs
         check_for_be_existence
 
         # create snapshot of the source BE and clone the snapshot to create the new BE
@@ -185,6 +196,7 @@ case ${type} in
 
         [ "${bootfs}" -a "${pool}" -a "${delete_origin}" ] || exerr ${usage_delete}
 
+        check_root_privs
         check_for_be_existence
 
         current_bootfs=$(/sbin/zpool list -H -o bootfs ${pool})
@@ -299,6 +311,7 @@ case ${type} in
 
         [ "${bootfs}" -a "${pool}" ] || exerr ${usage_src_upgrade}
 
+        check_root_privs
         check_for_be_existence
 
         mount -t nullfs -o ro /usr/src /${pool}/ROOT/${bootfs}/usr/src
@@ -330,6 +343,7 @@ umount /dev' > /${pool}/ROOT/${bootfs}/tmp/manageBE-upgrade.sh
 
         [ "${bootfs}" -a "${pool}" ] || exerr ${usage_freebsd_update}
 
+        check_root_privs
         check_for_be_existence
 
         chroot /${pool}/ROOT/${bootfs} mount -t devfs devfs /dev
@@ -352,6 +366,7 @@ umount /dev' > /${pool}/ROOT/${bootfs}/tmp/manageBE-upgrade.sh
 
         [ "${bootfs}" -a "${pool}" -a ${release} ] || exerr ${usage_freebsd_upgrade}
 
+        check_root_privs
         check_for_be_existence
 
         chroot /${pool}/ROOT/${bootfs} mount -t devfs devfs /dev
