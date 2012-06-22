@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.5 2012/06/21 06:11:18 awaters Exp $
+# $Id: manageBE.new,v 1.6 2012/06/22 02:27:54 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
@@ -91,8 +91,12 @@ calc_snap_size () {
         local size=$(zfs get -H -p -o value used $snap)
 	subtotal=$(( subtotal + size ))
     done
-    local total="$(hr_bytes $subtotal)"
-    echo $total
+    if [ "$subtotal" -ne "0" ]; then
+        local total="$(hr_bytes $subtotal)"
+        echo $total
+    else
+        echo "0 B"
+    fi
 }
 
 # Calculate the size of the BE root filesystem and it's descendent children.
