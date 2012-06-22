@@ -304,9 +304,9 @@ done
 
 printf "# Device\t\tMountpoint\tFStype\tOptions\tDump\tPass#\n" >  ${MNT}/${ROOTFS}/etc/fstab
 if [ -z "$DISK2" ]; then
-    printf "/dev/gpt/swap0\t\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+    printf "/dev/gpt/swap0\\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
 else
-    printf "/dev/mirror/swap\t\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
+    printf "/dev/mirror/swapt\tnone\tswap\tsw\t0\t0\n" >> ${MNT}/${ROOTFS}/etc/fstab
 fi
 
 cat >> ${MNT}/${ROOTFS}/etc/fstab << EOF
