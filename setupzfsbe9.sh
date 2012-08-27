@@ -3,6 +3,8 @@
 DISK1="ada0"
 DISK2="ada1"
 
+#USE4K="YES"
+
 MNT="/tmp/mnt"
 POOL="rpool"
 ROOTFS="${POOL}/ROOT/freebsd-90r"
@@ -24,18 +26,18 @@ echo "Preparing disk(s)..."
 
 gpart create -s gpt $DISK1
 
-gpart add -b 34 -s 128K -t freebsd-boot -l boot0 $DISK1
-gpart add -s 8G -t freebsd-swap -l swap0 $DISK1
-gpart add -t freebsd-zfs -l disk0 $DISK1
+gpart add -b 40   -s 128K -t freebsd-boot -l boot0 $DISK1
+gpart add -b 2048 -s 8G   -t freebsd-swap -l swap0 $DISK1
+gpart add                 -t freebsd-zfs  -l disk0 $DISK1
 
 gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK1
 
 if [ ! -z "$DISK2" ]; then
     gpart create -s gpt $DISK2
-    gpart add -b 34 -s 128K -t freebsd-boot -l boot1 $DISK2
-    gpart add -s 8G -t freebsd-swap -l swap1 $DISK2
 
-    gpart add -t freebsd-zfs -l disk1 $DISK2
+    gpart add -b 40   -s 128K -t freebsd-boot -l boot1 $DISK2
+    gpart add -b 2048 -s 8G   -t freebsd-swap -l swap1 $DISK2
+    gpart add                 -t freebsd-zfs  -l disk1 $DISK2
 
     gpart bootcode -b /boot/pmbr -p /boot/gptzfsboot -i 1 $DISK2
 
@@ -49,10 +51,27 @@ if [ ! -e "$MNT" ]; then
     mkdir -p $MNT
 fi
 
-if [ -z "$DISK2" ]; then
-    zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL /dev/gpt/disk0
+if [ -z "$USE4K" ]; then 
+    if [ -z "$DISK2" ]; then
+        zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL /dev/gpt/disk0
+    else
+        zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL mirror /dev/gpt/disk0 /dev/gpt/disk1
+    fi
 else
-    zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL mirror /dev/gpt/disk0 /dev/gpt/disk1
+    if [ -z "$DISK2" ]; then
+        gnop create -S 4096 /dev/gpt/disk0
+        zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL /dev/gpt/disk0.nop
+        zpool export $POOL
+        gnop destroy /dev/gpt/disk0.nop
+    else
+        gnop create -S 4096 /dev/gpt/disk0
+        gnop create -S 4096 /dev/gpt/disk1
+        zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL mirror /dev/gpt/disk0.nop /dev/gpt/disk1.nop
+        zpool export $POOL
+        gnop destroy /dev/gpt/disk0.nop
+        gnop destroy /dev/gpt/disk1.nop
+    fi    
+    zpool import -o cachefile=/var/tmp/zpool.cache $POOL
 fi
 
 zfs set checksum=fletcher4 $POOL
@@ -330,11 +349,11 @@ ${ROOTFS}/var/run /var/run zfs rw 0 0
 ${ROOTFS}/var/tmp /var/tmp zfs rw 0 0
 EOF
 
-if [ -e "/tmp/manageBE" ]; then
+if [ -e "/root/manageBE" ]; then
     if [ ! -e "${MNT}/${ROOTFS}/usr/local/sbin" ]; then
         mkdir -p ${MNT}/${ROOTFS}/usr/local/sbin
     fi
-    install -o root -g wheel -m 0740 /tmp/manageBE ${MNT}/${ROOTFS}/usr/local/sbin/manageBE
+    install -o root -g wheel -m 0740 /root/manageBE ${MNT}/${ROOTFS}/usr/local/sbin/manageBE
 fi
 
 echo Unmounting ZFS filesystems...
