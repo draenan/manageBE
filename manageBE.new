@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.6 2012/06/22 02:27:54 awaters Exp $
+# $Id: manageBE.new,v 1.7 2012/08/28 01:48:59 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
@@ -67,7 +67,7 @@ set_props () {
 # Displays provided byte amount in human-readable form.
 hr_bytes () {
    
-    local units="B K M G T P Z Y"
+    local units="B KB MB GB TB PB ZB YB"
     local i=0
 
     while : ; do
@@ -79,7 +79,7 @@ hr_bytes () {
         fi
     done
     local unit=$(echo $units | cut -d' ' -f$i)
-    echo "$(echo "scale=2; $1 / (1024^($i-1))" | bc ) ${unit}B"
+    echo "$(echo "scale=2; $1 / (1024^($i-1))" | bc ) ${unit}"
 }
 
 # Calculate the size of BE filesystem snapshots
