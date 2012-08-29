@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.7 2012/08/28 01:48:59 awaters Exp $
+# $Id: manageBE.new,v 1.8 2012/08/29 02:00:53 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
@@ -11,6 +11,7 @@
 # - Fix broken actions and correct a few sanity checks
 # - Made command substitution consistent with the method used for arithmetic expansion
 #   (POSIX Bourne as opposed to non-POSIX)
+# - Replace "freebsd" user property with "org.freebsd"
 # - Ensure new boot environment file systems have the same local properties as the
 #   file system they were cloned from
 # - Corrected code that populates /etc/fstab to take into account possible read-only
@@ -67,7 +68,7 @@ set_props () {
 # Displays provided byte amount in human-readable form.
 hr_bytes () {
    
-    local units="B KB MB GB TB PB ZB YB"
+    local units="B K M G T P Z Y"
     local i=0
 
     while : ; do
@@ -79,7 +80,7 @@ hr_bytes () {
         fi
     done
     local unit=$(echo $units | cut -d' ' -f$i)
-    echo "$(echo "scale=2; $1 / (1024^($i-1))" | bc ) ${unit}"
+    echo "$(echo "scale=2; $1 / (1024^($i-1))" | bc )${unit}"
 }
 
 # Calculate the size of BE filesystem snapshots
@@ -89,13 +90,13 @@ calc_snap_size () {
     local snap
     for snap in $(zfs list -r -t snapshot -H -o name $1); do
         local size=$(zfs get -H -p -o value used $snap)
-	subtotal=$(( subtotal + size ))
+        subtotal=$(( subtotal + size ))
     done
     if [ "$subtotal" -ne "0" ]; then
         local total="$(hr_bytes $subtotal)"
         echo $total
     else
-        echo "0 B"
+        echo "0B"
     fi
 }
 
@@ -106,7 +107,7 @@ calc_be_size () {
     local fs
     for fs in $(zfs list -r -t filesystem -H -o name $1); do
         local size=$(zfs get -H -p -o value referenced $fs)
-	subtotal=$(( subtotal + size ))
+        subtotal=$(( subtotal + size ))
     done
     local total="$(hr_bytes $subtotal)"
     echo $total
@@ -125,7 +126,7 @@ case ${type} in
 
         [ "${bootfs}" -a "${pool}" ] || exerr ${usage_activate}
 
-	check_root_privs
+        check_root_privs
         check_for_be_existence
 
         old_bootfs=$(/sbin/zpool list -H -o bootfs ${pool} |/usr/bin/sed s:^$pool/ROOT/::)
@@ -266,25 +267,23 @@ case ${type} in
                 fi
 
                 if [ "${be_active}" = "yes" -a "${be_nextboot}" = "yes" ]; then
-                  used_by_snapshots="$( calc_snap_size $be_filesystem)"
-                  be_space="$( calc_be_size $be_filesystem)"
+                  used_by_snapshots="$(calc_snap_size $be_filesystem)"
+                  be_space="$(calc_be_size $be_filesystem)"
                   be_mountpoint='/'
                 elif [ "${be_active}" = "no" -a "${be_nextboot}" = "yes" ]; then
-                  used_by_snapshots="$( calc_snap_size $be_filesystem)"
-                  be_space="$( calc_be_size $be_filesystem)"
+                  used_by_snapshots="$(calc_snap_size $be_filesystem)"
+                  be_space="$(calc_be_size $be_filesystem)"
                   be_mountpoint=$(/sbin/zfs list -H -o mountpoint $be_filesystem)
                 elif [ "${be_active}" = "yes" -a "${be_nextboot}" = "no" ]; then
                   be_origin=$(/sbin/zfs list -H -o origin ${be_filesystem})
-                  be_space="$( calc_be_size $be_filesystem)"
+                  be_space="$(calc_be_size $be_filesystem)"
                   be_mountpoint='/'
                 else
                   be_origin=$(/sbin/zfs list -H -o origin ${be_filesystem})
-                  be_space="$( calc_be_size $be_filesystem)"
+                  be_space="$(calc_be_size $be_filesystem)"
                   be_mountpoint=$(/sbin/zfs list -H -o mountpoint $be_filesystem)
                 fi
-                unit=$(echo $be_space | cut -d' ' -f 2)
-                be_space=$(echo $be_space | cut -d' ' -f 1)
-                printf "%-${name_length}s %-6s %-6s %-${mountpoint_length}s %${space_length}s %s\\n" $be_name $be_active $be_nextboot $be_mountpoint $be_space $unit
+                printf "%-${name_length}s %-6s %-6s %-${mountpoint_length}s %${space_length}s %s\\n" $be_name $be_active $be_nextboot $be_mountpoint $be_space
 
                 if [ "$verbose" = "YES" ]; then
                     be_created=$(/sbin/zfs list -H -S creation -o creation $be_filesystem)
