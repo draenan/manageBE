@@ -1,23 +1,12 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.8 2012/08/29 02:00:53 awaters Exp $
+# $Id: manageBE.new,v 1.9 2012/08/29 02:12:35 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
 # Original code by cryx: http://anonsvn.h3q.com/projects/freebsd-patches/browser/manageBE
 #
-# Modifications:
-#
-# - Fix broken actions and correct a few sanity checks
-# - Made command substitution consistent with the method used for arithmetic expansion
-#   (POSIX Bourne as opposed to non-POSIX)
-# - Replace "freebsd" user property with "org.freebsd"
-# - Ensure new boot environment file systems have the same local properties as the
-#   file system they were cloned from
-# - Corrected code that populates /etc/fstab to take into account possible read-only
-#   file systems (eg /var/empty)
-# - Reworked space-usage code to take into account child file systems and snapshots
-# - Require root privileges where appropriate.
+# Modifications (bug fixes, inherited properties, space usage reporting) by Adrian Waters.
 #
 
 if [ $(uname -r |cut -d '.' -f1) -lt "8" ]; then
