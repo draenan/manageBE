@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# $Id: manageBE.new,v 1.9 2012/08/29 02:12:35 awaters Exp $
+# $Id: manageBE.new,v 1.10 2012/11/23 01:31:06 awaters Exp $
 #
 # manageBE [activate|create|delete|list|src-upgrade|freebsd-update|freebsd-upgrade] {params}
 #
@@ -30,7 +30,7 @@ error_delete="If filesystem has dependent clones, please promote them via 'zfs p
 exerr () { echo -e "$*" >&2 ; exit 1; }
 
 check_for_be_existence () {
-    be_status=$(/sbin/zfs list -H -o org.freebsd:boot-environment ${pool}/ROOT/${bootfs} 2> /dev/null) 
+    be_status=$(/sbin/zfs list -H -o org.freebsd:boot-environment ${pool}/ROOT/${bootfs} 2> /dev/null)
     if [ "${be_status}" != "1" ]; then
         echo "Sorry, ${bootfs} is not a valid boot environment."
         exit
@@ -56,7 +56,7 @@ set_props () {
 
 # Displays provided byte amount in human-readable form.
 hr_bytes () {
-   
+
     local units="B K M G T P Z Y"
     local i=0
 
@@ -208,8 +208,11 @@ case ${type} in
         fi
     ;;
     list)
-        shift; while getopts :v: arg; do
-            verbose="YES";
+        shift; while getopts :v arg; do
+            case $arg in
+                v) verbose="YES";;
+                ?) ;;
+            esac
         done; shift $(( ${OPTIND} - 1 ))
 
     rootfs=$(mount | head -n1 | grep 'on / ' |cut -d ' ' -f1)
@@ -246,9 +249,9 @@ case ${type} in
             if [ $(/sbin/zfs list -H -o org.freebsd:boot-environment ${be_filesystem}) = 1 ]; then
                 be_name=$(echo ${be_filesystem}|/usr/bin/sed s:^$pool/ROOT/::)
 
-                be_active='no'  
+                be_active='no'
                 if [ "${be_filesystem}" = "${rootfs}" ]; then
-                    be_active='yes'     
+                    be_active='yes'
                 fi
                 be_nextboot='no'
                 if [ "${be_filesystem}" = "${zpool_bootfs}" ]; then
