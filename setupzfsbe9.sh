@@ -51,7 +51,7 @@ if [ ! -e "$MNT" ]; then
     mkdir -p $MNT
 fi
 
-if [ -z "$USE4K" ]; then 
+if [ -z "$USE4K" ]; then
     if [ -z "$DISK2" ]; then
         zpool create -m ${MNT}/$POOL -o cachefile=/var/tmp/zpool.cache $POOL /dev/gpt/disk0
     else
@@ -70,7 +70,7 @@ else
         zpool export $POOL
         gnop destroy /dev/gpt/disk0.nop
         gnop destroy /dev/gpt/disk1.nop
-    fi    
+    fi
     zpool import -o cachefile=/var/tmp/zpool.cache $POOL
 fi
 
